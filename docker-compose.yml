@@ -1,0 +1,30 @@
+name: onf-to
+
+networks:
+  coolify:
+    external: true
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: onf-to
+    restart: unless-stopped
+    env_file:
+      - .env
+    networks:
+      - coolify
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.onf-to-http.rule=Host(`onf.to`)
+      - traefik.http.routers.onf-to-http.entrypoints=http
+      - traefik.http.routers.onf-to-http.service=onf-to
+      - traefik.http.routers.onf-to-http.priority=1
+      - traefik.http.routers.onf-to-https.rule=Host(`onf.to`)
+      - traefik.http.routers.onf-to-https.entrypoints=https
+      - traefik.http.routers.onf-to-https.tls=true
+      - traefik.http.routers.onf-to-https.tls.certresolver=letsencrypt
+      - traefik.http.routers.onf-to-https.service=onf-to
+      - traefik.http.services.onf-to.loadbalancer.server.port=3000
+      - traefik.docker.network=coolify
