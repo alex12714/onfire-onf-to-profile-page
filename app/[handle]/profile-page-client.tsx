@@ -273,6 +273,18 @@ export default function ProfilePageClient({ params }: { params: { handle: string
     fetchUserData(true)
   }
 
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  const handleShareClick = (e: React.MouseEvent, itemType: string, itemId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const url = `https://onf.to/${params.handle}/${itemType}/${itemId}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedId(itemId)
+      setTimeout(() => setCopiedId(null), 2000)
+    })
+  }
+
   const [activeTab, setActiveTab] = useState<"products" | "services" | "courses" | "communities">("products")
 
   useEffect(() => {
@@ -586,49 +598,78 @@ export default function ProfilePageClient({ params }: { params: { handle: string
                             </div>
                           ))
                         ) : (
-                          // Render other tabs (products, services, communities) with existing layout
-                          productsData[activeTab].slice(0, visibleProductsCount).map((item) => (
-                            <div
-                              key={item.id}
-                              className="bg-gray-700/50 rounded-xl hover:bg-gray-700/70 transition-all duration-200 cursor-pointer border border-gray-600/30 p-4 relative"
-                            >
-                              {item.isOnSale && item.discountPercentage > 0 && (
-                                <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold rounded-full w-12 h-12 flex items-center justify-center z-10">
-                                  -{item.discountPercentage}%
-                                </div>
-                              )}
-                              <div className="flex flex-col gap-3">
-                                <Image
-                                  src={item.image || "/placeholder.svg"}
-                                  alt={item.title}
-                                  width={120}
-                                  height={180}
-                                  className="rounded-lg bg-gray-600 object-cover w-full h-48"
-                                />
-                                <div className="flex-1">
-                                  <h4 className="text-white text-base font-semibold mb-2 line-clamp-2">{item.title}</h4>
-                                  <p className="text-gray-300 text-sm mb-3 line-clamp-3">{item.description}</p>
-                                  <div className="flex items-center justify-between">
-                                    <div>
-                                      <div className="flex items-center gap-2">
-                                        <p className="text-orange-400 text-sm font-bold">{item.price}</p>
-                                        {item.compareAtPrice && 
-                                         parseFloat(item.compareAtPrice.replace(/[^\d.]/g, '')) > 0 && 
-                                         parseFloat(item.compareAtPrice.replace(/[^\d.]/g, '')) !== parseFloat(item.price.replace(/[^\d.]/g, '')) && (
-                                          <p className="text-gray-400 text-xs line-through">{item.compareAtPrice}</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="text-gray-400 hover:text-orange-400 transition-colors">
-                                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          // Render products and services with Link wrappers, communities without
+                          productsData[activeTab].slice(0, visibleProductsCount).map((item) => {
+                            const isLinkable = activeTab === "products" || activeTab === "services"
+                            const itemType = activeTab === "products" ? "product" : activeTab === "services" ? "service" : null
+
+                            const cardContent = (
+                              <div
+                                className="bg-gray-700/50 rounded-xl hover:bg-gray-700/70 transition-all duration-200 cursor-pointer border border-gray-600/30 p-4 relative"
+                              >
+                                {item.isOnSale && item.discountPercentage > 0 && (
+                                  <div className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold rounded-full w-12 h-12 flex items-center justify-center z-10">
+                                    -{item.discountPercentage}%
+                                  </div>
+                                )}
+                                {isLinkable && itemType && (
+                                  <button
+                                    onClick={(e) => handleShareClick(e, itemType, item.id)}
+                                    className={`absolute ${item.isOnSale && item.discountPercentage > 0 ? 'top-16' : 'top-2'} right-2 z-10 p-2 rounded-full bg-gray-800/70 hover:bg-gray-700 text-gray-400 hover:text-white transition-all duration-200`}
+                                    title="Share link"
+                                  >
+                                    {copiedId === item.id ? (
+                                      <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                                       </svg>
+                                    ) : (
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                      </svg>
+                                    )}
+                                  </button>
+                                )}
+                                <div className="flex flex-col gap-3">
+                                  <Image
+                                    src={item.image || "/placeholder.svg"}
+                                    alt={item.title}
+                                    width={120}
+                                    height={180}
+                                    className="rounded-lg bg-gray-600 object-cover w-full h-48"
+                                  />
+                                  <div className="flex-1">
+                                    <h4 className="text-white text-base font-semibold mb-2 line-clamp-2">{item.title}</h4>
+                                    <p className="text-gray-300 text-sm mb-3 line-clamp-3">{item.description}</p>
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <div className="flex items-center gap-2">
+                                          <p className="text-orange-400 text-sm font-bold">{item.price}</p>
+                                          {item.compareAtPrice &&
+                                           parseFloat(item.compareAtPrice.replace(/[^\d.]/g, '')) > 0 &&
+                                           parseFloat(item.compareAtPrice.replace(/[^\d.]/g, '')) !== parseFloat(item.price.replace(/[^\d.]/g, '')) && (
+                                            <p className="text-gray-400 text-xs line-through">{item.compareAtPrice}</p>
+                                          )}
+                                        </div>
+                                      </div>
+                                      <div className="text-gray-400 hover:text-orange-400 transition-colors">
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                      </div>
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            </div>
-                          ))
+                            )
+
+                            return isLinkable && itemType ? (
+                              <Link key={item.id} href={`/${params.handle}/${itemType}/${item.id}`}>
+                                {cardContent}
+                              </Link>
+                            ) : (
+                              <div key={item.id}>{cardContent}</div>
+                            )
+                          })
                         )}
                       </div>
                       {productsData[activeTab].length > visibleProductsCount && (
