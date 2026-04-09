@@ -311,6 +311,7 @@ export default function ServiceDetailClient({ params }: { params: { handle: stri
             amount: priceInCents,
             currency: (service.currency || "gbp").toLowerCase(),
             quantity: 1,
+            images: [imageUrl.startsWith("http") ? imageUrl : `https://onf.to${imageUrl}`],
           },
         ],
         success_url: `https://onf.to/${handle}/checkout/success?session_id={CHECKOUT_SESSION_ID}&type=booking`,

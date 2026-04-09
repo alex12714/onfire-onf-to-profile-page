@@ -5,6 +5,7 @@ interface LineItem {
   amount: number
   currency: string
   quantity: number
+  images?: string[]
 }
 
 interface CheckoutRequestBody {

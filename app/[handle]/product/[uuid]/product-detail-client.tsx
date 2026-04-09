@@ -137,6 +137,7 @@ export default function ProductDetailClient({ params }: { params: { handle: stri
               amount: amountInCents,
               currency: (product.currency || "gbp").toLowerCase(),
               quantity,
+              images: [selectedImage.startsWith("http") ? selectedImage : `https://onf.to${selectedImage}`],
             },
           ],
           success_url: `https://onf.to/${params.handle}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
