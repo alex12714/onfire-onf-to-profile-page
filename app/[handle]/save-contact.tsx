@@ -56,6 +56,21 @@ interface SaveContactProps {
   contact: ContactDetails
   /** User uuid used to build /card/<id>.vcf. Null hides the download entirely. */
   vcardId: string | null
+  /**
+   * Whether this user's contact card exists at all.
+   *
+   * Compared against `false` rather than truth-tested on purpose. The card
+   * service owns `user_preferences.contact_card_enabled`, but that value is not
+   * on the public profile payload yet — there is no settings UI, so it cannot
+   * vary, and surfacing it would mean re-issuing a 150-line SECURITY DEFINER
+   * RPC the whole public profile depends on for a field that is constant today.
+   *
+   * So the key is absent, `undefined !== false` holds, and this is a no-op. When
+   * the toggle ships it starts arriving populated and a user who switched their
+   * card off stops being offered a download that would 404. Writing the check
+   * now costs nothing; discovering it later costs a broken button.
+   */
+  contactCardAvailable?: boolean
   /** Runtime switch; off until the card service ships /card/:id.vcf. */
   vcardEnabled: boolean
   /**
@@ -166,6 +181,7 @@ export default function SaveContact({
   contact,
   vcardId,
   vcardEnabled,
+  contactCardAvailable,
   children,
 }: SaveContactProps) {
   const [inAppBrowser, setInAppBrowser] = useState<string | null>(null)
@@ -186,7 +202,11 @@ export default function SaveContact({
   }, [])
 
   const plainText = useMemo(() => buildPlainText(contact, profileUrl), [contact, profileUrl])
-  const showDownload = vcardEnabled && Boolean(vcardId)
+  // The fallback block below is deliberately NOT gated on this: a disabled
+  // contact card does not make the profile private, so the QR and the copyable
+  // details stay available even when the vCard download is withdrawn.
+  const showDownload =
+    vcardEnabled && Boolean(vcardId) && contactCardAvailable !== false
 
   const handleCopy = async () => {
     const ok = await copyText(plainText)

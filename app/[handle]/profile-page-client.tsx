@@ -30,6 +30,8 @@ interface UserData {
    */
   phone?: string
   email?: string
+  /** Card service's per-user card toggle; absent from the payload today. */
+  contactCardAvailable?: boolean
   // Data now included from RPC
   products?: ProductItem[]
   services?: ProductItem[]
@@ -218,6 +220,8 @@ export default function ProfilePageClient({
         role: "user",
         location: user.location || "",
         occupation: profile?.occupation || "",
+        // Not on the public payload yet - see SaveContact.contactCardAvailable.
+        contactCardAvailable: user.contact_card_available,
         products: (data.products || []).map((p: any) => ({
           id: p.uuid || String(p.id),
           title: p.name,
@@ -542,6 +546,7 @@ export default function ProfilePageClient({
                 qrSvg={qrSvg}
                 vcardEnabled={vcardEnabled}
                 vcardId={user.id ? String(user.id) : null}
+                contactCardAvailable={user.contactCardAvailable}
                 contact={{
                   name: user.name,
                   handle: user.handle,
