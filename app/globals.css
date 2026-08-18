@@ -57,3 +57,83 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   onf.to marketing landing page (`app/page.tsx`)
+   ---------------------------------------------------------------------------
+   Everything below is additive and scoped to the landing page. The shadcn
+   token block above is what the `/[handle]` profile pages and their product,
+   service and checkout children are built on — it is deliberately untouched.
+
+   Brand values are the OnFire web estate's shared tokens, matching
+   `backend-services/events-web` and `backend-services/calendar-web` in the
+   monorepo.
+--------------------------------------------------------------------------- */
+
+:root {
+  --brand-primary: #FF6B1F;
+  --brand-primary-ink: #B8480C;
+  --brand-primary-light: #FFCE54;
+  --brand-hover: #e55c14;
+  --brand-text: #222222;
+  --brand-muted: #707781;
+  --brand-blue: #2D71EC;
+  --brand-red: #FF3B30;
+}
+
+/*
+  The landing page paints its own surfaces, but the viewport still shows through
+  above and below the document during overscroll. Keyed off the landing page's
+  own root element, so no other route is affected.
+
+  Deliberately not an attribute on <html>: React reconciles the <html> element
+  during hydration and drops attributes added before it, so anything set there
+  by the pre-paint theme script disappears the moment the page becomes
+  interactive. The class on #onfto-root survives, so match on that instead.
+  Browsers without `:has()` simply skip the rule — the cost is a white
+  overscroll strip, nothing more.
+*/
+html:has(#onfto-root.dark),
+html:has(#onfto-root.dark) body {
+  background-color: #0b0b0c;
+}
+
+/* ---- Landing-page motion (dependency-free, GPU-friendly) ---- */
+@keyframes ofFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes ofFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+.of-fade-up {
+  opacity: 0;
+  animation: ofFadeUp 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.of-float {
+  animation: ofFloat 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .of-fade-up,
+  .of-float {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}

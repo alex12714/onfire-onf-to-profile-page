@@ -13,6 +13,23 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        // OnFire brand palette, shared with the other OnFire web properties
+        // (events-web, calendar-web). Additive: the shadcn tokens below are
+        // what the /[handle] profile pages render against and stay as they are.
+        brand: {
+          primary: '#FF6B1F',
+          // The brand orange darkened just enough to clear WCAG AA as small
+          // text on the light surfaces (5.3:1 on white, 5.0:1 on #FAF8F5).
+          // #FF6B1F itself manages only 2.85:1 and 2.69:1 there, so it stays a
+          // fill colour on light backgrounds and a text colour on dark ones.
+          ink: '#B8480C',
+          light: '#FFCE54',
+          hover: '#e55c14',
+          text: '#222222',
+          muted: '#707781',
+          blue: '#2D71EC',
+          red: '#FF3B30',
+        },
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -63,6 +80,18 @@ const config: Config = {
           border: 'hsl(var(--sidebar-border))',
           ring: 'hsl(var(--sidebar-ring))',
         },
+      },
+      fontFamily: {
+        // Applied via `font-display` on the marketing page only, so the
+        // profile pages keep the Inter body font they have always used.
+        display: [
+          'var(--font-jakarta)',
+          'system-ui',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'Segoe UI',
+          'sans-serif',
+        ],
       },
       borderRadius: {
         lg: 'var(--radius)',
