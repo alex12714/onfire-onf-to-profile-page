@@ -17,8 +17,17 @@ services:
       - coolify
     labels:
       - traefik.enable=true
+      # onf.to is DNS-only at Cloudflare (Let's Encrypt needs it), so there is no
+      # proxy in front to upgrade plaintext for us -- the http router has to do
+      # it itself. QR codes are opaque, so a scan of an http:// code would
+      # otherwise resolve in cleartext and be MITM-rewritable.
+      # Traefik serves HTTP-01 challenges from its internal acme-http@internal
+      # router, which outranks this one, so cert renewal is unaffected.
+      - traefik.http.middlewares.onf-to-https.redirectscheme.scheme=https
+      - traefik.http.middlewares.onf-to-https.redirectscheme.permanent=true
       - traefik.http.routers.onf-to-http.rule=Host(`onf.to`)
       - traefik.http.routers.onf-to-http.entrypoints=http
+      - traefik.http.routers.onf-to-http.middlewares=onf-to-https
       - traefik.http.routers.onf-to-http.service=onf-to
       - traefik.http.routers.onf-to-http.priority=1
       - traefik.http.routers.onf-to-https.rule=Host(`onf.to`)
