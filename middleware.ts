@@ -44,14 +44,16 @@ const RESERVED = new Set(["favicon.ico", "robots.txt", "sitemap.xml"])
 /**
  * Bounds on the configured countdown.
  *
- * A shortener that holds someone for a long time is precisely the pattern that
- * gets a domain flagged as malicious, so the ceiling is a safety rail rather
- * than a preference: a fat-fingered `600` in `system_config` cannot strand a
- * visitor for ten minutes. A non-positive delay degrades to a plain redirect,
- * which makes "set the delay to 0" a second, faster kill switch.
+ * `resolve_short_code` already clamps `delay_seconds` to 1..30 server-side and
+ * owns that policy. This ceiling deliberately MATCHES it so that a legitimately
+ * configured 20 or 30 is honoured rather than silently shortened here — two
+ * layers disagreeing about the same number is how quiet bugs are made. It only
+ * fires if the contract is violated, e.g. a regression returning 600, which
+ * cannot then strand a visitor for ten minutes. A non-positive delay degrades
+ * to a plain redirect, making "set the delay to 0" a second, faster kill switch.
  */
 const MIN_DELAY_SECONDS = 1
-const MAX_DELAY_SECONDS = 15
+const MAX_DELAY_SECONDS = 30
 
 /**
  * AdSense identifiers are public by design — the publisher id and slot id are
