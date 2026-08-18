@@ -122,3 +122,30 @@ export async function loadGoogleCredentials(): Promise<GoogleCredentials> {
 
   return { clientEmail: parsed.client_email, privateKey: parsed.private_key, issuerId: issuerId! }
 }
+
+/**
+ * Can this server actually sign a pass right now?
+ *
+ * Exists so a HEAD probe can answer "will a GET work?" without doing the work.
+ * That matters more than it looks: Next.js answers HEAD by running the GET
+ * handler and discarding the body, so without an explicit HEAD route a client
+ * politely probing with HEAD would make us sign a whole .pkpass for nothing —
+ * and, on the Google side, would PUT a class and an object into Google's API as
+ * a side effect of a request that is supposed to be side-effect free.
+ *
+ * Loading the credentials is the only honest test: a hand-set feature flag can
+ * claim a certificate is installed when it is not.
+ */
+export async function walletAvailability(): Promise<{ apple: boolean; google: boolean }> {
+  const [apple, google] = await Promise.all([
+    loadAppleCredentials().then(
+      () => true,
+      () => false,
+    ),
+    loadGoogleCredentials().then(
+      () => true,
+      () => false,
+    ),
+  ])
+  return { apple, google }
+}

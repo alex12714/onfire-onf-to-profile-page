@@ -10,7 +10,7 @@
 import { NextResponse } from "next/server"
 import { fetchCard } from "@/lib/card/model"
 import { buildWalletJwt } from "@/lib/card/google"
-import { WalletNotConfiguredError } from "@/lib/card/credentials"
+import { WalletNotConfiguredError, walletAvailability } from "@/lib/card/credentials"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -58,4 +58,30 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       { status: 500, headers: { "Cache-Control": "no-store" } },
     )
   }
+}
+
+/**
+ * HEAD is the availability probe. Short-circuiting it matters more here than on
+ * the Apple route: buildWalletJwt() upserts a Wallet class and object into
+ * Google's API before signing, so letting HEAD fall through to GET would make a
+ * supposedly side-effect-free request perform remote writes — and burn Google's
+ * 20 rps budget — every time a client decided whether to draw a button.
+ */
+export async function HEAD(_req: Request, { params }: { params: { id: string } }) {
+  const id = params.id ?? ""
+  if (!id || id.length > 64) return new NextResponse(null, { status: 404 })
+
+  let card
+  try {
+    card = await fetchCard(id)
+  } catch {
+    return new NextResponse(null, { status: 502 })
+  }
+  if (!card) return new NextResponse(null, { status: 404 })
+
+  const { google } = await walletAvailability()
+  return new NextResponse(null, {
+    status: google ? 200 : 503,
+    headers: { "Cache-Control": "no-store" },
+  })
 }

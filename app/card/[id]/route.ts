@@ -15,7 +15,7 @@ import { NextResponse } from "next/server"
 import { fetchCard, cardFilename } from "@/lib/card/model"
 import { renderVCard } from "@/lib/card/vcard"
 import { buildPkPass } from "@/lib/card/apple"
-import { WalletNotConfiguredError } from "@/lib/card/credentials"
+import { WalletNotConfiguredError, walletAvailability } from "@/lib/card/credentials"
 
 // Signing and the upstream RPC both need Node APIs, and the card must never be
 // served from a stale edge cache after a user revokes a field.
@@ -101,4 +101,49 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       { status: 500, headers: { "Cache-Control": "no-store" } },
     )
   }
+}
+
+/**
+ * HEAD is the availability probe: "would a GET give me a pass?"
+ *
+ * Next.js would otherwise answer HEAD by running GET and throwing the body
+ * away, which once certificates exist means signing a full .pkpass per probe.
+ * This handler reports the same status a GET would without doing any of that
+ * work — it resolves the card (one indexed lookup) and asks whether signing
+ * material loads, then stops.
+ */
+export async function HEAD(_req: Request, { params }: { params: { id: string } }) {
+  const raw = params.id ?? ""
+  const dot = raw.lastIndexOf(".")
+  if (dot <= 0) return new NextResponse(null, { status: 404 })
+
+  const id = raw.slice(0, dot)
+  const ext = raw.slice(dot + 1).toLowerCase()
+  if ((ext !== "vcf" && ext !== "pkpass") || id.length > 64) {
+    return new NextResponse(null, { status: 404 })
+  }
+
+  let card
+  try {
+    card = await fetchCard(id)
+  } catch {
+    return new NextResponse(null, { status: 502 })
+  }
+  if (!card) return new NextResponse(null, { status: 404 })
+
+  if (ext === "vcf") {
+    return new NextResponse(null, {
+      status: 200,
+      headers: { "Content-Type": "text/vcard; charset=utf-8", "Cache-Control": "no-store" },
+    })
+  }
+
+  const { apple } = await walletAvailability()
+  return new NextResponse(null, {
+    status: apple ? 200 : 503,
+    headers: {
+      "Cache-Control": "no-store",
+      ...(apple ? { "Content-Type": "application/vnd.apple.pkpass" } : {}),
+    },
+  })
 }
