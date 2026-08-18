@@ -8,21 +8,65 @@ import type { NextRequest } from "next/server"
  * code redirects to its destination, while everything else (profiles, product
  * and service pages, checkout, API routes) reaches its normal route untouched.
  *
- * Short codes are 7 characters drawn from a confusable-free alphabet
- * (no 0/o/1/i/l). The shape check below is deliberately cheap and runs before
- * any network call, so an ordinary profile view never pays for a lookup.
+ * IMPORTANT: the database is the authority on what a valid code is — see the
+ * `short_links_code_format_chk` CHECK constraint on `public.short_links`. The
+ * pattern below is only a cheap PRE-FILTER that rejects what provably cannot
+ * be a code; `resolve_short_code` decides everything else. Do not treat it as
+ * validation, and keep it no stricter than the DB constraint: a pre-filter
+ * that is tighter than the DB silently turns real links into dead ones.
+ *
+ * Codes come in two shapes, and this pattern is a superset of both:
+ *   - auto-generated: 7 chars from a confusable-free alphabet (no 0/o/1/i/l)
+ *   - custom/vanity:  3-32 chars, [a-z0-9] with internal hyphens
  */
 
-// Mirrors the mint-side alphabet in the short_links schema.
-const CODE_CHARSET = "abcdefghjkmnpqrstuvwxyz23456789"
-const CODE_LENGTH = 7
-const CODE_PATTERN = new RegExp(`^[${CODE_CHARSET}]{${CODE_LENGTH}}$`)
+// Superset pre-filter: 3-32 chars, alphanumeric ends, hyphens only internal.
+// Double hyphens are rejected separately below (not expressible cheaply here).
+const CODE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/
 
 const RESOLVE_ENDPOINT = "https://api2.onfire.so/rpc/resolve_short_code"
 const RESOLVE_TIMEOUT_MS = 1500
 
 // Single-segment paths that must never be treated as a short code.
 const RESERVED = new Set(["favicon.ico", "robots.txt", "sitemap.xml"])
+
+/**
+ * Negative-result cache.
+ *
+ * Widening the pre-filter to accept vanity codes means usernames match it too,
+ * so an ordinary profile view now reaches the resolver. Two reasons that
+ * matters here: the round trip measures ~139ms median / ~480ms p90 from this
+ * container, and the Worker rate-limits `resolve_short_code` at 300 req/min
+ * PER IP — and all onf.to traffic egresses from this one host, so profile
+ * views would otherwise burn the same budget real codes need.
+ *
+ * Only genuine `{found:false}` answers are cached. Errors, timeouts and 429s
+ * are never cached — caching a failure would extend an outage instead of
+ * riding it out. Positive results are not cached either, so re-pointing a
+ * short link takes effect immediately.
+ */
+const NEGATIVE_TTL_MS = 30_000
+const NEGATIVE_MAX_ENTRIES = 500
+const negativeCache = new Map<string, number>()
+
+function isKnownMiss(code: string): boolean {
+  const expiresAt = negativeCache.get(code)
+  if (expiresAt === undefined) return false
+  if (expiresAt <= Date.now()) {
+    negativeCache.delete(code)
+    return false
+  }
+  return true
+}
+
+function rememberMiss(code: string): void {
+  // Bounded: drop the oldest entry once full. Map preserves insertion order.
+  if (negativeCache.size >= NEGATIVE_MAX_ENTRIES) {
+    const oldest = negativeCache.keys().next()
+    if (!oldest.done) negativeCache.delete(oldest.value)
+  }
+  negativeCache.set(code, Date.now() + NEGATIVE_TTL_MS)
+}
 
 interface ResolveResult {
   found?: boolean
@@ -69,7 +113,10 @@ async function resolveCode(code: string): Promise<URL | null> {
     }
 
     const data = (await response.json()) as ResolveResult
-    if (!data?.found) return null
+    if (!data?.found) {
+      rememberMiss(code)
+      return null
+    }
 
     const destination = safeDestination(data.destination_url)
     if (!destination) {
@@ -96,9 +143,13 @@ export async function middleware(request: NextRequest) {
   const candidate = segments[1]
   if (RESERVED.has(candidate)) return NextResponse.next()
 
-  // Resolution is case-insensitive; the mint alphabet is lowercase.
+  // Resolution is case-insensitive server-side, so normalise here too rather
+  // than reject an uppercase variant someone typed off a printed QR code.
   const code = candidate.toLowerCase()
-  if (!CODE_PATTERN.test(code)) return NextResponse.next()
+  if (!CODE_PATTERN.test(code) || code.includes("--")) return NextResponse.next()
+
+  // Skip the round trip for a code we very recently confirmed does not exist.
+  if (isKnownMiss(code)) return NextResponse.next()
 
   const destination = await resolveCode(code)
   if (!destination) return NextResponse.next()
