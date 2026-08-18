@@ -35,8 +35,28 @@ export interface CardModel {
   updatedAt: string | null
 }
 
-/** Why a card could not be produced. Callers map these onto status codes. */
-export type CardMiss = "not_found" | "upstream_error"
+/**
+ * A card could not be fetched. `kind` separates the two failures that look
+ * identical in a log but have completely different fixes:
+ *
+ *   "forbidden"   the API gateway rejected US, not the user. Almost always
+ *                 means /rpc/get_contact_card is missing from PUBLIC_ROUTES in
+ *                 cf-api-gateway, i.e. a deploy-ordering problem, not an outage.
+ *   "unreachable" genuine network failure or timeout.
+ *
+ * Worth the extra class: these routes can go live before the gateway allowlist
+ * does, and a bare "upstream unavailable" sends whoever sees it hunting for an
+ * outage that is not happening.
+ */
+export class CardUpstreamError extends Error {
+  constructor(
+    readonly kind: "forbidden" | "unreachable" | "status",
+    readonly status?: number,
+  ) {
+    super(`card upstream ${kind}${status ? ` (${status})` : ""}`)
+    this.name = "CardUpstreamError"
+  }
+}
 
 const API_BASE = process.env.ONFIRE_API_BASE ?? "https://api2.onfire.so"
 const RPC_TIMEOUT_MS = 5000
@@ -65,12 +85,26 @@ export async function fetchCard(id: string): Promise<CardModel | null> {
     // Network failure or timeout. Distinct from "no such user": the caller
     // turns this into a 502 so a transient upstream blip is never cached or
     // mistaken for a deleted profile.
-    throw new Error("upstream_unreachable")
+    throw new CardUpstreamError("unreachable")
   } finally {
     clearTimeout(timer)
   }
 
-  if (!res.ok) throw new Error(`upstream_status_${res.status}`)
+  if (res.status === 401 || res.status === 403) {
+    // The gateway refused us, not the user. Say so loudly in the container log,
+    // because the symptom (every card 502s) looks like an outage and the fix is
+    // a one-line allowlist entry.
+    console.error(
+      "[card] API gateway rejected get_contact_card with " +
+        res.status +
+        " — /rpc/get_contact_card is probably missing from PUBLIC_ROUTES in " +
+        "backend-services/cf-api-gateway/src/index.js. This is a deploy-ordering " +
+        "problem, not an outage; the profile pages are unaffected.",
+    )
+    throw new CardUpstreamError("forbidden", res.status)
+  }
+
+  if (!res.ok) throw new CardUpstreamError("status", res.status)
 
   const raw = (await res.json()) as Record<string, unknown> | null
   if (!raw || raw.found !== true) return null

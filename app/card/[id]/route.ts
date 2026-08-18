@@ -12,7 +12,7 @@
  */
 
 import { NextResponse } from "next/server"
-import { fetchCard, cardFilename } from "@/lib/card/model"
+import { fetchCard, cardFilename, CardUpstreamError } from "@/lib/card/model"
 import { renderVCard } from "@/lib/card/vcard"
 import { buildPkPass } from "@/lib/card/apple"
 import { WalletNotConfiguredError, walletAvailability } from "@/lib/card/credentials"
@@ -21,6 +21,19 @@ import { WalletNotConfiguredError, walletAvailability } from "@/lib/card/credent
 // served from a stale edge cache after a user revokes a field.
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+/** Name the cause in the response body, so a 502 is not a mystery. */
+function upstreamBody(err: unknown) {
+  if (err instanceof CardUpstreamError && err.kind === "forbidden") {
+    return {
+      error: "upstream_forbidden",
+      code: "CARD_UPSTREAM_FORBIDDEN",
+      hint: "The API gateway rejected get_contact_card. Add /rpc/get_contact_card to PUBLIC_ROUTES in cf-api-gateway and redeploy the worker.",
+    }
+  }
+  return { error: "upstream_unavailable", code: "CARD_UPSTREAM_UNAVAILABLE" }
+}
+
 
 function notFound() {
   return NextResponse.json(
@@ -44,13 +57,16 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   let card
   try {
     card = await fetchCard(id)
-  } catch {
-    // Upstream unreachable is NOT "no such user" — returning 404 here would
-    // teach caches and clients that a live profile had been deleted.
-    return NextResponse.json(
-      { error: "upstream_unavailable", code: "CARD_UPSTREAM_UNAVAILABLE" },
-      { status: 502, headers: { "Cache-Control": "no-store" } },
-    )
+  } catch (err) {
+    // Upstream trouble is NOT "no such user" — returning 404 here would teach
+    // caches and clients that a live profile had been deleted. Stays 502 (not
+    // 503) in both cases: clients read 503 as "wallet not configured, stop
+    // asking", and this is transient-by-deploy, so it must land in their retry
+    // bucket and start working with no client change.
+    return NextResponse.json(upstreamBody(err), {
+      status: 502,
+      headers: { "Cache-Control": "no-store" },
+    })
   }
   if (!card) return notFound()
 

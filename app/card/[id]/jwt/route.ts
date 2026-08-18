@@ -8,12 +8,25 @@
  */
 
 import { NextResponse } from "next/server"
-import { fetchCard } from "@/lib/card/model"
+import { fetchCard, CardUpstreamError } from "@/lib/card/model"
 import { buildWalletJwt } from "@/lib/card/google"
 import { WalletNotConfiguredError, walletAvailability } from "@/lib/card/credentials"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+
+/** Name the cause in the response body, so a 502 is not a mystery. */
+function upstreamBody(err: unknown) {
+  if (err instanceof CardUpstreamError && err.kind === "forbidden") {
+    return {
+      error: "upstream_forbidden",
+      code: "CARD_UPSTREAM_FORBIDDEN",
+      hint: "The API gateway rejected get_contact_card. Add /rpc/get_contact_card to PUBLIC_ROUTES in cf-api-gateway and redeploy the worker.",
+    }
+  }
+  return { error: "upstream_unavailable", code: "CARD_UPSTREAM_UNAVAILABLE" }
+}
+
 
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const id = params.id ?? ""
@@ -27,11 +40,11 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
   let card
   try {
     card = await fetchCard(id)
-  } catch {
-    return NextResponse.json(
-      { error: "upstream_unavailable", code: "CARD_UPSTREAM_UNAVAILABLE" },
-      { status: 502, headers: { "Cache-Control": "no-store" } },
-    )
+  } catch (err) {
+    return NextResponse.json(upstreamBody(err), {
+      status: 502,
+      headers: { "Cache-Control": "no-store" },
+    })
   }
   if (!card) {
     return NextResponse.json(
