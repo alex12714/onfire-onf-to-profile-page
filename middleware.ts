@@ -36,6 +36,25 @@ import type { NextRequest } from "next/server"
 const CODE_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,30})[a-z0-9]$/
 
 const RESOLVE_ENDPOINT = "https://api2.onfire.so/rpc/resolve_short_code"
+
+/**
+ * Click-analytics ingest key (`system_config.short_links_ingest_key`).
+ *
+ * Read at RUNTIME from the container environment, never inlined at build time:
+ * Next only inlines a build-time value for NEXT_PUBLIC_* vars, so a build arg
+ * would read back as undefined here — and would also bake a secret into the
+ * image. It lives in the server's .env, which compose passes via `env_file`,
+ * so rotating it is a restart rather than a rebuild.
+ *
+ * This is a secret. It must never reach a browser, a log line, or the
+ * interstitial HTML. Middleware runs server-side, which is the only reason
+ * sending it from here is safe.
+ *
+ * Absent or wrong, `resolve_short_code` still resolves and still increments
+ * scan_count — it simply records no click row. So the code and the env var can
+ * be deployed independently, in either order, with no broken state between.
+ */
+const INGEST_KEY = process.env.SHORT_LINKS_INGEST_KEY
 const RESOLVE_TIMEOUT_MS = 1500
 
 // Single-segment paths that must never be treated as a short code.
@@ -161,18 +180,48 @@ function safeAdConfig(client: unknown, slot: unknown): AdConfig | null {
   return { client, slot }
 }
 
-async function resolveCode(code: string): Promise<RedirectPlan | null> {
+/**
+ * Context for click analytics.
+ *
+ * Raw values only — referrer domain, device/OS/browser, bot detection and UTM
+ * extraction are all parsed in the database so there is exactly one
+ * implementation and a second caller cannot drift from this one.
+ *
+ * No geo keys: onf.to is not behind Cloudflare (it is a different domain from
+ * onfire.so and has no CF zone), so CF-IPCountry/City/Region do not exist on
+ * these requests. The analytics schema treats geo as additive, so it can be
+ * filled in later without a migration if that ever changes.
+ *
+ * The visitor's IP is deliberately not sent.
+ */
+function clickContext(request: NextRequest): Record<string, string | null> {
+  return {
+    referrer: request.headers.get("referer"),
+    user_agent: request.headers.get("user-agent"),
+    query: request.nextUrl.search,
+  }
+}
+
+async function resolveCode(code: string, request: NextRequest): Promise<RedirectPlan | null> {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), RESOLVE_TIMEOUT_MS)
 
   try {
+    const payload: Record<string, unknown> = { p_code: code }
+    // Only attach analytics when we actually hold the key, so a machine without
+    // it behaves exactly as before rather than sending a null key.
+    if (INGEST_KEY) {
+      payload.p_ingest_key = INGEST_KEY
+      payload.p_ctx = clickContext(request)
+    }
+
     const response = await fetch(RESOLVE_ENDPOINT, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
       },
-      body: JSON.stringify({ p_code: code }),
+      body: JSON.stringify(payload),
       cache: "no-store",
       signal: controller.signal,
     })
@@ -499,7 +548,7 @@ export async function middleware(request: NextRequest) {
   // would double-count the scan and corrupt the analytics users see in the
   // app. That is why the interstitial is rendered from the plan in hand rather
   // than re-resolving the code on a page of its own.
-  const plan = await resolveCode(code)
+  const plan = await resolveCode(code, request)
   if (!plan) return NextResponse.next()
 
   if (plan.delaySeconds > 0) return renderInterstitial(plan)
