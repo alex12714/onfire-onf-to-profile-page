@@ -327,6 +327,7 @@ function renderInterstitial(plan: RedirectPlan): NextResponse {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
 <meta name="referrer" content="origin">
+<link rel="icon" href="/icon.png" type="image/png">
 <title>Taking you to ${host} &middot; OnFire</title>
 <style>
 :root{
@@ -529,6 +530,20 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Exactly one path segment, e.g. "/abc2xyz" -> ["", "abc2xyz"].
+  //
+  // This is the guarantee every multi-segment route on onf.to depends on, so
+  // treat it as load-bearing rather than incidental. `/card/<id>.vcf`,
+  // `/<handle>/product/<uuid>` and every other nested route reach their page
+  // because they bail HERE, before any short-code logic runs -- NOT because
+  // their ids happen to fall outside CODE_PATTERN's 3-32 char window. An id
+  // that happened to look exactly like a live code would still be safe; do not
+  // "simplify" this check away on the assumption the length filter covers it.
+  //
+  // Single-segment roots are the opposite case and are NOT protected here: the
+  // pre-filter is a deliberate superset of the DB's code format, so a bare
+  // `/card` or `/pricing` IS treated as a short code. Those need reserving in
+  // `system_config.short_links_reserved_codes` so the code cannot be claimed
+  // and shadow the route.
   const segments = pathname.split("/")
   if (segments.length !== 2) return NextResponse.next()
 
