@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Card, CardContent } from "@/components/ui/card"
 import { useState, useEffect } from "react"
+import SaveContact from "./save-contact"
 
 interface UserData {
   id: number | string
@@ -20,6 +21,15 @@ interface UserData {
   isVerified: boolean
   role: string
   location: string
+  occupation: string
+  /**
+   * Not returned by `get_public_user_profile` today — it withholds
+   * `users.email` / `users.phone_number` from anonymous callers by design.
+   * Carried as optional so the fallback block lights up automatically if the
+   * card service later exposes them under its own privacy rules.
+   */
+  phone?: string
+  email?: string
   // Data now included from RPC
   products?: ProductItem[]
   services?: ProductItem[]
@@ -84,7 +94,17 @@ interface ErrorState {
   canRetry: boolean
 }
 
-export default function ProfilePageClient({ params }: { params: { handle: string } }) {
+export default function ProfilePageClient({
+  params,
+  profileUrl,
+  qrSvg,
+  vcardEnabled,
+}: {
+  params: { handle: string }
+  profileUrl: string
+  qrSvg: string | null
+  vcardEnabled: boolean
+}) {
   const [user, setUser] = useState<UserData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<ErrorState | null>(null)
@@ -197,6 +217,7 @@ export default function ProfilePageClient({ params }: { params: { handle: string
         isVerified: false,
         role: "user",
         location: user.location || "",
+        occupation: profile?.occupation || "",
         products: (data.products || []).map((p: any) => ({
           id: p.uuid || String(p.id),
           title: p.name,
@@ -515,13 +536,29 @@ export default function ProfilePageClient({ params }: { params: { handle: string
                 )}
               </div>
 
-              {/* Send Message Button */}
-              <Button
-                className="mx-auto bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold py-3 px-8 rounded-full shadow-lg transform transition-all duration-200 hover:scale-105"
-                size="sm"
+              {/* Send Message + Save Contact */}
+              <SaveContact
+                profileUrl={profileUrl}
+                qrSvg={qrSvg}
+                vcardEnabled={vcardEnabled}
+                vcardId={user.id ? String(user.id) : null}
+                contact={{
+                  name: user.name,
+                  handle: user.handle,
+                  website: user.website || undefined,
+                  location: user.location || undefined,
+                  occupation: user.occupation || undefined,
+                  phone: user.phone,
+                  email: user.email,
+                }}
               >
-                SEND MESSAGE
-              </Button>
+                <Button
+                  className="bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold py-3 px-8 rounded-full shadow-lg transform transition-all duration-200 hover:scale-105"
+                  size="sm"
+                >
+                  SEND MESSAGE
+                </Button>
+              </SaveContact>
 
               {/* Tabs Section */}
               <div className="mt-8 pt-6 border-t border-gray-600/50">

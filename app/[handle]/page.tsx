@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import QRCode from "qrcode"
 import ProfilePageClient from "./profile-page-client"
 
 interface UserData {
@@ -174,6 +175,58 @@ export async function generateMetadata({ params }: { params: { handle: string } 
   }
 }
 
-export default function ProfilePage({ params }: { params: { handle: string } }) {
-  return <ProfilePageClient params={params} />
+/**
+ * The QR shown in the "Save contact" fallback block.
+ *
+ * Rendered here rather than in the client component for two reasons: it depends
+ * only on the handle, which the server already has, so it needs none of the
+ * profile data the client fetches; and generating it server-side keeps the
+ * `qrcode` library out of the client bundle entirely on a page that is
+ * overwhelmingly loaded on phones.
+ *
+ * A QR that fails to encode must never take the profile down with it, so a
+ * failure returns null and the fallback block simply renders without it.
+ */
+async function renderProfileQr(profileUrl: string): Promise<string | null> {
+  try {
+    return await QRCode.toString(profileUrl, {
+      type: "svg",
+      errorCorrectionLevel: "M",
+      margin: 0,
+      color: { dark: "#000000", light: "#ffffff" },
+    })
+  } catch {
+    return null
+  }
+}
+
+export default async function ProfilePage({ params }: { params: { handle: string } }) {
+  const profileUrl = `https://onf.to/${encodeURIComponent(params.handle)}`
+  const qrSvg = await renderProfileQr(profileUrl)
+
+  /**
+   * Kill switch for the vCard download, default OFF.
+   *
+   * The button points at `/card/:id.vcf`, which the card service owns and has
+   * not shipped yet. Shipping a visible button that 404s on live public traffic
+   * is worse than shipping no button, so the download stays hidden until
+   * VCARD_ENABLED=1 is set. The fallback block does not depend on that endpoint
+   * and is useful on its own, so it ships enabled.
+   *
+   * Deliberately NOT a NEXT_PUBLIC_ variable: those are inlined at build time,
+   * so flipping one means rebuilding the image. This route is server-rendered
+   * on demand, so a plain server-side variable is read per request — turning the
+   * button on becomes an env change and a container restart, and turning it back
+   * off during an incident does not wait on a build.
+   */
+  const vcardEnabled = process.env.VCARD_ENABLED === "1"
+
+  return (
+    <ProfilePageClient
+      params={params}
+      profileUrl={profileUrl}
+      qrSvg={qrSvg}
+      vcardEnabled={vcardEnabled}
+    />
+  )
 }
